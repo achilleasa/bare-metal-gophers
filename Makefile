@@ -2,6 +2,7 @@ OS = $(shell uname -s)
 ARCH := x86
 BUILD_DIR := build
 BUILD_ABS_DIR := $(CURDIR)/$(BUILD_DIR)
+VBOX_VM_NAME := bare-metal-gophers
 
 kernel_target :=$(BUILD_DIR)/kernel-$(ARCH).bin
 iso_target := $(BUILD_DIR)/kernel-$(ARCH).iso
@@ -79,8 +80,16 @@ kernel:
 iso:
 	vagrant ssh -c 'cd $(VAGRANT_SRC_FOLDER); make iso'
 
-run: iso
+run-qemu: iso
 	qemu-system-i386 -cdrom $(iso_target)
+
+run-vbox: iso
+	VBoxManage createvm --name $(VBOX_VM_NAME) --ostype "Linux_64" --register || true
+	VBoxManage storagectl $(VBOX_VM_NAME) --name "IDE Controller" --add ide || true
+	VBoxManage storageattach $(VBOX_VM_NAME) --storagectl "IDE Controller" --port 0 --device 0 --type dvddrive \
+		--medium $(iso_target) || true
+	VBoxManage setextradata $(VBOX_VM_NAME) GUI/ScaleFactor 2
+	VBoxManage startvm $(VBOX_VM_NAME)
 
 gdb: iso
 	qemu-system-i386 -s -S -cdrom $(iso_target) &
