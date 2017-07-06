@@ -44,11 +44,12 @@ go.o:
 	    | sh 2>&1 | sed -e "s/^/  | /g"
 
 	@# build/go.o is a elf32 object file but all Go symbols are unexported. Our
-	@# asm entrypoint code needs to know the address to 'main.main' so we use
-	@# objcopy to create a global alias symbol 'Kmain' pointing to 'main.main'
-	@echo "[objcopy] creating global symbol alias 'Kmain' for 'main.main' in go.o"
+	@# asm entrypoint code needs to know the address to 'main.main' and 'runtime.g0'
+	@# so we use objcopy to globalize them
+	@echo "[objcopy] globalizing symbols {runtime.g0, main.main} in go.o"
 	@objcopy \
-		--add-symbol Kmain=.text:0x`nm $(BUILD_DIR)/go.o | grep "main.main$$" | cut -d' ' -f1` \
+		--globalize-symbol runtime.g0 \
+		--globalize-symbol main.main \
 		 $(BUILD_DIR)/go.o $(BUILD_DIR)/go.o
 
 $(BUILD_DIR)/arch/$(ARCH)/asm/%.o: arch/$(ARCH)/asm/%.s

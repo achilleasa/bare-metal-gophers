@@ -8,17 +8,12 @@ stack_bottom:
 	resb 16384 	; 16 KiB
 stack_top:
 
-; Reserve some extra space for our tls_0 block; GO functions expect the
-; GS segment register to point to the current TLS so we need to initialize this
-; first before invoking any go functions
-tls0:
-g0_ptr:	        resd 1 ; gs:0x00 is a pointer to the current g struct
-                       ; in our case it should point to g0
-g0:
-g0_stack_lo:    resd 1
-g0_stack_hi:    resd 1
-g0_stackguard0: resd 1  ; sp compared to this value in go stack growth prologue
-g0_stackguard1: resd 1  ; sp compared to this value in C stack growth prologue
+; According to the "ELF handling for TLS" document section 4.3.2
+; (https://www.akkadia.org/drepper/tls.pdf) for the GNU variant of the IA-32 ABI, 
+; gs:0x00 contains a pointer to the TCB. Variables in the TLS are stored 
+; before the TCB and are accessed using negative offsets from the TCB address.
+g0_ptr:	        resd 1 
+tcb_ptr:        resd 1 
 
 section .text
 bits 32
@@ -26,8 +21,11 @@ align 4
 
 MULTIBOOT_MAGIC equ 0x36d76289
 
+G_STACK_LO equ 0x0
+G_STACK_HI equ 0x4
+G_STACKGUARD0 equ 0x8
+
 err_unsupported_bootloader db '[rt0] kernel not loaded by multiboot-compliant bootloader', 0
-err_kmain_returned db '[rt0] kMain returned; halting system', 0
 
 ;------------------------------------------------------------------------------
 ; Kernel arch-specific entry point
@@ -57,15 +55,17 @@ _rt0_entry:
  	; Load initial GDT
  	call _rt0_load_gdt
 
-	; init g0 so we can invoke Go functions
-	mov dword [gs:0x00], g0
-	mov dword [g0_stack_hi], stack_top
-	mov dword [g0_stack_lo], stack_bottom
-	mov dword [g0_stackguard0], stack_bottom
+	; init g0 so we can invoke Go functions. For now we use hardcoded offsets 
+	; that correspond to the g struct definition in src/runtime/runtime2.go
+	extern runtime.g0
+	mov dword [runtime.g0 + G_STACK_LO], stack_bottom
+	mov dword [runtime.g0 + G_STACK_HI], stack_top
+	mov dword [runtime.g0 + G_STACKGUARD0], stack_bottom
+	mov dword [g0_ptr], runtime.g0
 
 	; jump into the go code
-	extern Kmain
-	call Kmain
+	extern main.main
+	call main.main
 
 	; Main should never return; halt the CPU
 halt:
@@ -112,9 +112,10 @@ _rt0_load_gdt:
 	push eax
 	push ebx
 
-	; Go code uses the GS register to access the TLS. Set the base address
-	; for the GS descriptor to point to our tls0 table
-	mov eax, tls0
+	; Store the address to the TCB in tcb_ptr
+	; and set up gs base address to it
+	mov eax, tcb_ptr
+	mov [tcb_ptr], eax
 	mov ebx, gdt0_gs_seg
 	mov [ebx+2], al
 	mov [ebx+3], ah
@@ -132,6 +133,7 @@ update_descriptors:
 	mov ds, ax
 	mov es, ax
 	mov fs, ax
+	mov ss, ax
 	mov ax, GS_SEG
 	mov gs, ax
 
@@ -150,7 +152,7 @@ gdt0:
 gdt0_nil_seg: GDT_ENTRY_32 0x00, 0x0, 0x0, 0x0				        ; nil descriptor (not used by CPU but required by some emulators)
 gdt0_cs_seg:  GDT_ENTRY_32 0x00, 0xFFFFF, SEG_EXEC | SEG_R, SEG_GRAN_4K_PAGE    ; code descriptor
 gdt0_ds_seg:  GDT_ENTRY_32 0x00, 0xFFFFF, SEG_NOEXEC | SEG_W, SEG_GRAN_4K_PAGE  ; data descriptor
-gdt0_gs_seg:  GDT_ENTRY_32 0x00, 0x40, SEG_NOEXEC | SEG_W, SEG_GRAN_BYTE        ; TLS descriptor (required in order to use go segmented stacks)
+gdt0_gs_seg:  GDT_ENTRY_32 0x00, 0xFFFFF, SEG_NOEXEC | SEG_W, SEG_GRAN_BYTE        ; TLS descriptor (required in order to use go segmented stacks)
 
 gdt0_desc:
 	dw gdt0_desc - gdt0 - 1  ; gdt size should be 1 byte less than actual length
