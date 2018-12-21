@@ -17,6 +17,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.provision "shell", inline: <<-SHELL
     apt-get update
+    apt-get install -y build-essential
     apt-get install -y nasm gccgo xorriso
     [ ! -d "/usr/local/go" ] && wget -qO- https://storage.googleapis.com/golang/go1.8.linux-amd64.tar.gz | tar xz -C /usr/local
     echo "export GOROOT=/usr/local/go" > /etc/profile.d/go.sh
