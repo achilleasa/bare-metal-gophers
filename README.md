@@ -65,4 +65,4 @@ supported:
 If you are curious what the demo looks like but do not want to actually build
 and run it, here is a screen capture of it running under virtualbox:
 
-![running under virtualbox](https://drive.google.com/uc?export=download&id=0Bz9Vk3E_v2HBZ1dZQ25oQTB3SW8)
+![running under virtualbox](img/bare-metal-gophers.gif)
