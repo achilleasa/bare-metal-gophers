@@ -26,32 +26,24 @@ asm_obj_files := $(patsubst arch/$(ARCH)/asm/%.s, $(BUILD_DIR)/arch/$(ARCH)/asm/
 
 kernel: $(kernel_target)
 
-$(kernel_target): $(asm_obj_files) go.o
+$(kernel_target): $(asm_obj_files) go.a
 	@echo "[$(LD)] linking kernel-$(ARCH).bin"
-	@$(LD) $(LD_FLAGS) -o $(kernel_target) $(asm_obj_files) $(BUILD_DIR)/go.o
+	@$(LD) $(LD_FLAGS) -o $(kernel_target) $(asm_obj_files) $(BUILD_DIR)/go.a
 
-go.o:
+go.a:
 	@mkdir -p $(BUILD_DIR)
 
-	@echo "[go] compiling go sources into a standalone .o file"
-	@GOARCH=386 GOOS=linux go build -n 2>&1 | sed \
-	    -e "1s|^|set -e\n|" \
-	    -e "1s|^|export GOOS=linux\n|" \
-	    -e "1s|^|export GOARCH=386\n|" \
-	    -e "1s|^|WORK='$(BUILD_ABS_DIR)'\n|" \
-	    -e "1s|^|alias pack='go tool pack'\n|" \
-	    -e "/^mv/d" \
-	    -e "s|-extld|-tmpdir='$(BUILD_ABS_DIR)' -linkmode=external -extldflags='-nostdlib' -extld|g" \
-	    | sh 2>&1 | sed -e "s/^/  | /g"
+	@echo "[go] compiling go kernel sources into a standalone .o file"
+	@GOARCH=$(GOARCH) GOOS=$(GOOS) go build -ldflags='-buildmode=c-archive' -o $(BUILD_DIR)/go.a
 
-	@# build/go.o is a elf32 object file but all Go symbols are unexported. Our
+	@# build/go.a contains an elf32 object file but all Go symbols are unexported. Our
 	@# asm entrypoint code needs to know the address to 'main.main' and 'runtime.g0'
 	@# so we use objcopy to globalize them
-	@echo "[objcopy] globalizing symbols {runtime.g0, main.main} in go.o"
+	@echo "[objcopy] globalizing symbols {runtime.g0, main.main} in go.a"
 	@objcopy \
 		--globalize-symbol runtime.g0 \
 		--globalize-symbol main.main \
-		 $(BUILD_DIR)/go.o $(BUILD_DIR)/go.o
+		$(BUILD_DIR)/go.a $(BUILD_DIR)/go.a
 
 $(BUILD_DIR)/arch/$(ARCH)/asm/%.o: arch/$(ARCH)/asm/%.s
 	@mkdir -p $(shell dirname $@)
